@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 const (
@@ -25,6 +26,7 @@ const (
 	B = 1
 	KB = 1024 * B
 	MB = 1024 * KB
+	G = 1000 * MB
 )
 
 // 校验磁盘的信息
@@ -157,12 +159,19 @@ func (d *DiskSizeInfo)DiskSize()  int {
 		log.Println(err.Error())
 		return 0
 	}
-	log.Println(out.String())
+	str := out.String()
+	log.Println(str)
 	// 获取磁盘有用的空间大小
 	re := regexp.MustCompile("[0-9]+")
-	data := re.FindAllString(out.String(), -1)
+	data := re.FindAllString(str, -1)
 	size, _ := strconv.Atoi(data[2])
-	return size * MB
+	sizeType := str[len(str)-1:]
+	if sizeType == "G" {
+		return size * G
+	}else if sizeType == "M"{
+		return size * MB
+	}
+	return size * KB
 }
 
 // 通过dd命令写于磁盘
