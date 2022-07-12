@@ -39,7 +39,7 @@ type DiskSizeInfo struct {
 }
 
 // 磁盘的写入
-func (d *DiskSizeInfo)DiskWriteByFile(src string) error {
+func (d *DiskSizeInfo)DiskWriteByFile(src string, i int) error {
 	_, err := os.Stat(src)
 	if err != nil {
 		return  err
@@ -64,7 +64,11 @@ func (d *DiskSizeInfo)DiskWriteByFile(src string) error {
 		return  err
 	}
 	// 对磁盘进行偏移，并写于数据到磁盘
-	_, _ = destination.Seek(int64(d.SeekSize), io.SeekStart)
+	_, err = destination.Seek(int64(i * d.SeekSize), io.SeekStart)
+	if err != nil {
+		log.Println("seek", d.SeekSize)
+		return  err
+	}
 	nBytes, err = destination.Write(buf)
 	if err != nil {
 		log.Println(nBytes)
@@ -74,7 +78,7 @@ func (d *DiskSizeInfo)DiskWriteByFile(src string) error {
 }
 
 // 读取磁盘
-func (d *DiskSizeInfo)DiskReadByFile() ([]byte, error) {
+func (d *DiskSizeInfo)DiskReadByFile(i int) ([]byte, error) {
 	_, err := os.Stat(d.DiskPath)
 	if err != nil {
 		return  nil, err
@@ -85,7 +89,7 @@ func (d *DiskSizeInfo)DiskReadByFile() ([]byte, error) {
 	}
 	defer source.Close()
 	buf := directio.AlignedBlock(d.BlockSize)
-	_, err = source.Seek(int64(d.SeekSize), io.SeekStart)
+	_, err = source.Seek(int64(i * d.SeekSize), io.SeekStart)
 	if err != nil {
 		log.Println("seek", d.SeekSize)
 		return  nil, err
@@ -119,7 +123,7 @@ func (d *DiskSizeInfo)MountDisk(src string) error {
 	mountDir := "./mountData"
 	ok, _ := PathExists(mountDir)
 	if !ok{
-		 _ = os.Mkdir(mountDir, os.ModePerm)
+		_ = os.Mkdir(mountDir, os.ModePerm)
 	}
 	// 挂起磁盘
 	Str = fmt.Sprintf("mount %s %s", d.DiskPath, mountDir)
@@ -137,9 +141,9 @@ func (d *DiskSizeInfo)ClearDisk(src string) error {
 	AllSize := d.DiskSize()
 	bk := AllSize / d.Size
 	for i:=0; i < bk; i++{
-		err := d.DiskWriteByFile(src)
+		err := d.DiskWriteByFile(src, i)
 		if err != nil {
-			fmt.Println(err.Error(), i, bk)
+			//fmt.Println(err.Error(), i, bk)
 			return err
 		}
 	}
@@ -213,7 +217,7 @@ func (d *DiskSizeInfo)CheckReadDisk(src string, i int) error {
 	if ok {
 		_ = os.RemoveAll(tmpFile)
 	}
-	data, err := d.DiskReadByFile()
+	data, err := d.DiskReadByFile(i)
 	if err != nil {
 		return err
 	}
@@ -221,23 +225,24 @@ func (d *DiskSizeInfo)CheckReadDisk(src string, i int) error {
 	if err != nil {
 		return err
 	}
-	ok, err = FileCompare(src, tmpFile)
-	if err != nil {
-		return err
-	}
-	if !ok{
+
+	// 与测试集数据进行验证
+	ok, _ = FileCompare(src, tmpFile)
+	if !ok {
+		log.Printf("block %v is different for src\n", i)
 		_ = os.RemoveAll(tmpFile)
-		return fmt.Errorf("different file")
+		return err
 
 	}
+	log.Printf("block %v is same for src\n", i)
 	_ = os.RemoveAll(tmpFile)
 	return nil
 }
 
 // 磁盘校验数据的类型的返回
-func (d *DiskSizeInfo)DiskDatatype( i int) string {
+func (d *DiskSizeInfo)DiskDatatype(i int) string {
 	for src, check := range d.SrcMap {
-		data, err := d.DiskReadByFile()
+		data, err := d.DiskReadByFile(i)
 		if err != nil {
 			fmt.Println(err.Error())
 			return ""
@@ -250,44 +255,32 @@ func (d *DiskSizeInfo)DiskDatatype( i int) string {
 }
 
 // 循环通过数据集进项校验
-func (d *DiskSizeInfo)Run() error {
-	tmpFile := "./tmp1.txt"
+func (d *DiskSizeInfo)Run(n int) error {
 	AllSize := d.DiskSize()
-	bk := AllSize / d.Size  // 对磁盘进项分组
-	if bk < 1{
+	bk := AllSize / d.Size // 对磁盘进项分组
+	if bk < 1 {
 		return fmt.Errorf("small disk data, size is:%d", AllSize)
 	}
 	fmt.Println("disk size: ", AllSize, bk)
 	num := 0
 	for {
-		for src, check := range d.SrcMap {
+		for src, _ := range d.SrcMap {
+			fmt.Println(src)
 			for i := 0; i < bk; i++ {
+				log.Println("################################################################")
 				// 对已有磁盘数据进行校验
 				secType := d.DiskDatatype(i)
-				if secType != "" {
+				if secType != "" && secType == src{
 					err := d.CheckReadDisk(secType, i)
 					if err != nil {
 						return fmt.Errorf("different by check")
 					}
-				}
-				log.Println("################################################################")
-				ok, _ := PathExists(tmpFile)
-				if ok {
-					_ = os.RemoveAll(tmpFile)
-				}
-				// 磁盘数据
-				log.Printf("read block %v \n", i)
-				data, err := d.DiskReadByFile()
-				if err != nil {
-					log.Println(err.Error())
-					return err
-				}
-				// 校验是为测试集中数据，不是则为空
-				if !CheckFileData(data, check) {
+					continue
+				}else {
 					log.Printf("block  %v is empty \n", i)
 					log.Printf("write block %v \n", i)
 					// 写入数据
-					err := d.DiskWriteByFile(src)
+					err := d.DiskWriteByFile(src, i)
 					if err != nil {
 						log.Println(err.Error())
 						return err
@@ -296,30 +289,16 @@ func (d *DiskSizeInfo)Run() error {
 					i = -1
 					continue
 				}
-				err = saveFile(tmpFile, data)
-				if err != nil {
-					return err
-				}
-				// 与测试集数据进行验证
-				ok, err = FileCompare(src, tmpFile)
-				if err != nil {
-					return err
-				}
-				if !ok {
-					log.Printf("block %v is different for src\n", i)
-					_ = os.RemoveAll(tmpFile)
-					return err
-
-				}
-				log.Printf("block %v is same for src\n", i)
-				_ = os.RemoveAll(tmpFile)
 			}
 			num++
+			if n > 0 && n <= num {
+				log.Println("test is over")
+				return nil
+			}
 			log.Println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!ok!!!!!!!!!!!!!!!!!!!!!!!,num:= ", num)
 		}
 	}
 }
-
 // 初始化校验集数据文件
 func (d *DiskSizeInfo)initFile()error{
 	if len(d.SrcMap) <= 0{

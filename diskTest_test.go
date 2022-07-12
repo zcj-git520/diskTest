@@ -18,7 +18,7 @@ func TestDisk( *testing.T)  {
 		fmt.Println(err)
 		return
 	}
-	err = disk.Run()
+	err = disk.Run(-1)
 	if err != nil {
 		fmt.Println(err)
 	}
