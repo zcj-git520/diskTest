@@ -1,25 +1,24 @@
 package diskTest
 
 import (
-	"fmt"
 	"testing"
 )
 
-func TestDisk( *testing.T)  {
+func TestDisk( t *testing.T)  {
 	diskPath := "/dev/sdf"
-	srcMap :=  make(map[string]string)
-	srcMap["/home/zcj-ubuntu/go_word/demo_0.txt"] = "zhaochengji"
-	srcMap["/home/zcj-ubuntu/go_word/demo_1.txt"] = "checkout ser mask"
-	srcMap["/home/zcj-ubuntu/go_word/demo_2.txt"] = "./unix.socket"
-	size := MB * 100
-	seekSzie := size/10
-	disk, err := InitDiskTest(diskPath, srcMap, size, seekSzie, 2*BLOCKSIZE)
+	disk, err := InitDiskTest(diskPath)
 	if err != nil {
-		fmt.Println(err)
+		t.Errorf("%v 磁盘初始化失败, 失败原因为:%v \n", diskPath, err)
 		return
 	}
-	err = disk.Run(-1)
-	if err != nil {
-		fmt.Println(err)
+	if !disk.DiskStatus(){
+		t.Errorf("%v 磁盘未开启", diskPath)
+		return
 	}
+	err = disk.Run()
+	if err != nil {
+		t.Errorf(err.Error())
+		return
+	}
+
 }
